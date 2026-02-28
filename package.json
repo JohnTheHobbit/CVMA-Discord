@@ -1,0 +1,29 @@
+{
+  "name": "cvma-discord-bot",
+  "version": "1.0.0",
+  "description": "Discord bot for CVMA Minnesota — role sync, verification, and server management",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "deploy-commands": "node dist/deploy-commands.js"
+  },
+  "keywords": ["discord", "cvma", "bot"],
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "airtable": "^0.12.2",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.7",
+    "node-cron": "^3.0.3",
+    "winston": "^3.17.0",
+    "winston-daily-rotate-file": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "@types/node-cron": "^3.0.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.0"
+  }
+}
