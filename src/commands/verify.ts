@@ -2,6 +2,8 @@ import {
   ChatInputCommandInteraction,
   SlashCommandBuilder,
   GuildMember,
+  TextChannel,
+  EmbedBuilder,
 } from 'discord.js';
 import { findMemberByEmail, linkDiscordId } from '../services/airtable';
 import {
@@ -120,6 +122,26 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     logger.info(
       `Verified ${interaction.user.tag} as ${displayName} (${chapterLabel}). Roles: ${assigned.join(', ')}`,
     );
+
+    // Announce in #introductions
+    const introChannel = guild.channels.cache.find(
+      (c) => c.name === 'introductions' && c.isTextBased(),
+    ) as TextChannel | undefined;
+
+    if (introChannel) {
+      const embed = new EmbedBuilder()
+        .setTitle('New Member Verified!')
+        .setDescription(
+          `Welcome **${displayName}** to CVMA Minnesota!\n\n` +
+          `**Chapter:** ${chapterLabel}\n` +
+          `**Member Type:** ${memberRole || 'N/A'}`,
+        )
+        .setColor(0x2e8b57)
+        .setThumbnail(interaction.user.displayAvatarURL())
+        .setTimestamp();
+
+      await introChannel.send({ embeds: [embed] });
+    }
   } catch (err) {
     logger.error(`Verification failed for ${interaction.user.tag}: ${err}`);
     await interaction.editReply(

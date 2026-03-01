@@ -39,6 +39,8 @@ export const CATEGORIES = {
   STATE_GENERAL: '🏍️ STATE GENERAL',
   EVENTS_RIDES: '📅 EVENTS & RIDES',
   SEB: '🔒 SEB',
+  STATE_AUX: '🔸 STATE AUX',
+  STATE_FM: '🔹 STATE FM/SUP',
   chapter: (ch: string) => `🟢 CHAPTER ${ch}`,
 } as const;
 

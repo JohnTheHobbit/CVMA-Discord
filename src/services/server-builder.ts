@@ -96,6 +96,10 @@ interface ServerRoles {
   verified: Role;
   cebs: Map<string, Role>;
   chapters: Map<string, Role>;
+  fullMember: Role;
+  auxiliary: Role;
+  support: Role;
+  supportAux: Role;
 }
 
 /** Create all roles needed for the CVMA server. */
@@ -134,14 +138,14 @@ async function buildRoles(guild: Guild): Promise<ServerRoles> {
   }
 
   // Label roles (no special permissions, not hoisted)
-  await ensureRole(guild, ROLES.FULL_MEMBER, ROLE_COLORS.FULL_MEMBER);
-  await ensureRole(guild, ROLES.AUXILIARY, ROLE_COLORS.AUXILIARY);
-  await ensureRole(guild, ROLES.SUPPORT, ROLE_COLORS.SUPPORT);
-  await ensureRole(guild, ROLES.SUPPORT_AUXILIARY, ROLE_COLORS.SUPPORT_AUXILIARY);
+  const fullMember = await ensureRole(guild, ROLES.FULL_MEMBER, ROLE_COLORS.FULL_MEMBER);
+  const auxiliary = await ensureRole(guild, ROLES.AUXILIARY, ROLE_COLORS.AUXILIARY);
+  const support = await ensureRole(guild, ROLES.SUPPORT, ROLE_COLORS.SUPPORT);
+  const supportAux = await ensureRole(guild, ROLES.SUPPORT_AUXILIARY, ROLE_COLORS.SUPPORT_AUXILIARY);
 
   const verified = await ensureRole(guild, ROLES.VERIFIED, ROLE_COLORS.VERIFIED);
 
-  return { stateRep, seb, verified, cebs, chapters };
+  return { stateRep, seb, verified, cebs, chapters, fullMember, auxiliary, support, supportAux };
 }
 
 /** Create all categories and channels. */
@@ -272,7 +276,49 @@ async function buildChannels(guild: Guild, roles: ServerRoles): Promise<void> {
       { id: cebRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
       { id: roles.seb.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
     ]);
+
+    // Aux chat — all chapter members can read, only AUX + SAUX can post
+    await ensureChannel(guild, 'aux-chat', ChannelType.GuildText, chCat, [
+      { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: chRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [PermissionFlagsBits.SendMessages] },
+      { id: roles.auxiliary.id, allow: [PermissionFlagsBits.SendMessages] },
+      { id: roles.supportAux.id, allow: [PermissionFlagsBits.SendMessages] },
+      { id: cebRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageMessages] },
+      { id: roles.seb.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+    ]);
+
+    // FM chat — all chapter members can read, only FM + SUP can post
+    await ensureChannel(guild, 'fm-chat', ChannelType.GuildText, chCat, [
+      { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: chRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [PermissionFlagsBits.SendMessages] },
+      { id: roles.fullMember.id, allow: [PermissionFlagsBits.SendMessages] },
+      { id: roles.support.id, allow: [PermissionFlagsBits.SendMessages] },
+      { id: cebRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageMessages] },
+      { id: roles.seb.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+    ]);
   }
+
+  // ── STATE AUX ───────────────────────────────────────────
+  const stateAuxCat = await ensureCategory(guild, CATEGORIES.STATE_AUX, [
+    { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+    { id: roles.verified.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
+    { id: roles.auxiliary.id, allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
+    { id: roles.supportAux.id, allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
+    { id: roles.seb.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak, PermissionFlagsBits.ManageMessages] },
+  ]);
+  await ensureChannel(guild, 'aux-general', ChannelType.GuildText, stateAuxCat);
+  await ensureChannel(guild, 'aux-hangout', ChannelType.GuildVoice, stateAuxCat);
+
+  // ── STATE FM/SUP ────────────────────────────────────────
+  const stateFmCat = await ensureCategory(guild, CATEGORIES.STATE_FM, [
+    { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+    { id: roles.verified.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
+    { id: roles.fullMember.id, allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
+    { id: roles.support.id, allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
+    { id: roles.seb.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak, PermissionFlagsBits.ManageMessages] },
+  ]);
+  await ensureChannel(guild, 'fm-general', ChannelType.GuildText, stateFmCat);
+  await ensureChannel(guild, 'fm-hangout', ChannelType.GuildVoice, stateFmCat);
 }
 
 /** Set up the role hierarchy ordering (highest position first). */
