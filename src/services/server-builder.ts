@@ -160,7 +160,7 @@ async function buildChannels(guild: Guild, roles: ServerRoles): Promise<void> {
     { id: everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [PermissionFlagsBits.SendMessages] },
   ]);
   await ensureChannel(guild, 'verify', ChannelType.GuildText, welcomeCat, [
-    { id: everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+    { id: everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.UseApplicationCommands] },
   ]);
 
   // ── STATE ANNOUNCEMENTS ─────────────────────────────────
@@ -301,9 +301,8 @@ async function buildChannels(guild: Guild, roles: ServerRoles): Promise<void> {
   // ── STATE AUX ───────────────────────────────────────────
   const stateAuxCat = await ensureCategory(guild, CATEGORIES.STATE_AUX, [
     { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
-    { id: roles.verified.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
-    { id: roles.auxiliary.id, allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
-    { id: roles.supportAux.id, allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
+    { id: roles.auxiliary.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
+    { id: roles.supportAux.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
     { id: roles.seb.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak, PermissionFlagsBits.ManageMessages] },
   ]);
   await ensureChannel(guild, 'aux-general', ChannelType.GuildText, stateAuxCat);
@@ -312,9 +311,8 @@ async function buildChannels(guild: Guild, roles: ServerRoles): Promise<void> {
   // ── STATE FM/SUP ────────────────────────────────────────
   const stateFmCat = await ensureCategory(guild, CATEGORIES.STATE_FM, [
     { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
-    { id: roles.verified.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
-    { id: roles.fullMember.id, allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
-    { id: roles.support.id, allow: [PermissionFlagsBits.SendMessages, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
+    { id: roles.fullMember.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
+    { id: roles.support.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
     { id: roles.seb.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak, PermissionFlagsBits.ManageMessages] },
   ]);
   await ensureChannel(guild, 'fm-general', ChannelType.GuildText, stateFmCat);

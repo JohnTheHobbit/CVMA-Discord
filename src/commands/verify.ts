@@ -106,10 +106,22 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     // Link Discord ID in AirTable
     await linkDiscordId(record.recordId, interaction.user.id);
 
-    // Build response
+    // Build display name (for embed/log) and server nickname
     const displayName = record.roadName
       ? `${record.firstName} "${record.roadName}" ${record.lastName}`
       : `${record.firstName} ${record.lastName}`;
+
+    const namePart = record.roadName || `${record.firstName} ${record.lastName}`;
+    const nickParts = [namePart];
+    if (chapterNum) nickParts.push(chapterNum);
+    if (title) nickParts.push(title);
+    const nickname = nickParts.join(' - ');
+
+    try {
+      await member.setNickname(nickname, 'CVMA verification');
+    } catch (nickErr) {
+      logger.warn(`Could not set nickname for ${interaction.user.tag}: ${nickErr}`);
+    }
 
     const chapterLabel = chapterNum ? `Chapter ${chapterNum}` : 'Unknown chapter';
 

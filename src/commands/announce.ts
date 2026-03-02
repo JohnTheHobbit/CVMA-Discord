@@ -7,12 +7,12 @@ import {
   CategoryChannel,
   ChannelType,
 } from 'discord.js';
-import { CHAPTER_NUMBERS, ROLES } from '../utils/constants';
+import { CHAPTER_NUMBERS, CATEGORIES, ROLES } from '../utils/constants';
 import logger from '../utils/logger';
 
 export const data = new SlashCommandBuilder()
   .setName('announce')
-  .setDescription('Post a formatted announcement to your chapter\'s announcements channel')
+  .setDescription('Post a formatted announcement to a chapter or state announcements channel')
   .addStringOption((opt) =>
     opt
       .setName('title')
@@ -24,7 +24,60 @@ export const data = new SlashCommandBuilder()
       .setName('message')
       .setDescription('Announcement body text')
       .setRequired(true),
+  )
+  .addStringOption((opt) =>
+    opt
+      .setName('scope')
+      .setDescription('Post to state or chapter announcements (SEB only for state)')
+      .addChoices(
+        { name: 'State', value: 'state' },
+        { name: 'Chapter', value: 'chapter' },
+      ),
   );
+
+/** Find the announcements channel for a chapter based on context or CEB membership. */
+function findChapterAnnouncementsChannel(
+  interaction: ChatInputCommandInteraction,
+  isSEB: boolean,
+  cebChapters: string[],
+): TextChannel | null {
+  const currentChannel = interaction.channel;
+
+  // If inside a chapter category, use that chapter's announcements
+  if (currentChannel && 'parent' in currentChannel && currentChannel.parent) {
+    const categoryName = currentChannel.parent.name;
+    for (const ch of CHAPTER_NUMBERS) {
+      if (categoryName.includes(ch)) {
+        if (isSEB || cebChapters.includes(ch)) {
+          const parent = currentChannel.parent;
+          if (parent.type === ChannelType.GuildCategory) {
+            return parent.children.cache.find(
+              (c): c is TextChannel => c.name === 'announcements' && c.isTextBased(),
+            ) ?? null;
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  // Fallback: if CEB of exactly one chapter, use that
+  if (cebChapters.length === 1) {
+    const chapterCat = interaction.guild?.channels.cache.find(
+      (c): c is CategoryChannel =>
+        c.type === ChannelType.GuildCategory &&
+        c.name.includes(cebChapters[0]) &&
+        c.name.includes('CHAPTER'),
+    );
+    if (chapterCat) {
+      return chapterCat.children.cache.find(
+        (c): c is TextChannel => c.name === 'announcements' && c.isTextBased(),
+      ) ?? null;
+    }
+  }
+
+  return null;
+}
 
 export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
   if (!interaction.guild || !interaction.member) {
@@ -54,51 +107,74 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
   const title = interaction.options.getString('title', true);
   const message = interaction.options.getString('message', true);
+  const scope = interaction.options.getString('scope'); // optional: 'state' | 'chapter'
 
   // Determine which announcements channel to post to.
-  // If the command is used inside a chapter category, post to that chapter's announcements.
-  // Otherwise, if CEB of exactly one chapter, use that chapter's channel.
   const currentChannel = interaction.channel;
   let targetChannel: TextChannel | null = null;
 
-  if (currentChannel && 'parent' in currentChannel && currentChannel.parent) {
-    const categoryName = currentChannel.parent.name;
-    // Check if we're inside a chapter category
-    for (const ch of CHAPTER_NUMBERS) {
-      if (categoryName.includes(ch)) {
-        // Verify the user has CEB or SEB access to this chapter
-        if (isSEB || cebChapters.includes(ch)) {
-          const parent = currentChannel.parent;
-          if (parent.type === ChannelType.GuildCategory) {
-            targetChannel = parent.children.cache.find(
-              (c): c is TextChannel => c.name === 'announcements' && c.isTextBased(),
-            ) ?? null;
-          }
-        }
-        break;
-      }
+  // --- Explicit scope selection ---
+  if (scope === 'state') {
+    if (!isSEB) {
+      await interaction.editReply('Only SEB members can post state-level announcements.');
+      return;
     }
-  }
-
-  // Fallback: if CEB of exactly one chapter, use that
-  if (!targetChannel && cebChapters.length === 1) {
-    const chapterCat = interaction.guild.channels.cache.find(
+    const stateCat = interaction.guild.channels.cache.find(
       (c): c is CategoryChannel =>
         c.type === ChannelType.GuildCategory &&
-        c.name.includes(cebChapters[0]) &&
-        c.name.includes('CHAPTER'),
+        c.name === CATEGORIES.STATE_ANNOUNCEMENTS,
     );
-    if (chapterCat) {
-      targetChannel = chapterCat.children.cache.find(
+    if (stateCat) {
+      targetChannel = stateCat.children.cache.find(
         (c): c is TextChannel => c.name === 'announcements' && c.isTextBased(),
       ) ?? null;
+    }
+  } else if (scope === 'chapter') {
+    // Explicit chapter scope — detect from current channel or single CEB chapter
+    targetChannel = findChapterAnnouncementsChannel(interaction, isSEB, cebChapters);
+  } else {
+    // --- Auto-detect based on context ---
+
+    // If inside the state announcements category and user is SEB, post there
+    if (
+      isSEB &&
+      currentChannel &&
+      'parent' in currentChannel &&
+      currentChannel.parent?.name === CATEGORIES.STATE_ANNOUNCEMENTS
+    ) {
+      const parent = currentChannel.parent;
+      if (parent.type === ChannelType.GuildCategory) {
+        targetChannel = parent.children.cache.find(
+          (c): c is TextChannel => c.name === 'announcements' && c.isTextBased(),
+        ) ?? null;
+      }
+    }
+
+    // If inside a chapter category, post to that chapter's announcements
+    if (!targetChannel) {
+      targetChannel = findChapterAnnouncementsChannel(interaction, isSEB, cebChapters);
+    }
+
+    // Fallback for SEB not in any specific category: post to state announcements
+    if (!targetChannel && isSEB) {
+      const stateCat = interaction.guild.channels.cache.find(
+        (c): c is CategoryChannel =>
+          c.type === ChannelType.GuildCategory &&
+          c.name === CATEGORIES.STATE_ANNOUNCEMENTS,
+      );
+      if (stateCat) {
+        targetChannel = stateCat.children.cache.find(
+          (c): c is TextChannel => c.name === 'announcements' && c.isTextBased(),
+        ) ?? null;
+      }
     }
   }
 
   if (!targetChannel) {
     await interaction.editReply(
       'Could not determine which announcements channel to post to. ' +
-      'Please run this command from within your chapter\'s channels.',
+      'Try using the `scope` option to specify state or chapter, ' +
+      'or run this command from within the relevant category.',
     );
     return;
   }
