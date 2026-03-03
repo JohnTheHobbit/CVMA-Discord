@@ -52,6 +52,11 @@ export const MEMBER_TYPE_MAP: Record<string, string> = {
   SAUX: ROLES.SUPPORT_AUXILIARY,
 };
 
+/** Interaction custom IDs for verification flow */
+export const VERIFY_BUTTON_ID = 'cvma-verify-button';
+export const VERIFY_MODAL_ID = 'cvma-verify-modal';
+export const EMAIL_INPUT_ID = 'cvma-verify-email';
+
 /** AirTable field names */
 export const AIRTABLE_FIELDS = {
   MID: 'MID',

@@ -4,13 +4,20 @@ import {
   PermissionFlagsBits,
   Role,
   CategoryChannel,
+  TextChannel,
   OverwriteResolvable,
+  EmbedBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ActionRowBuilder,
+  MessageActionRowComponentBuilder,
 } from 'discord.js';
 import {
   CHAPTER_NUMBERS,
   ROLES,
   ROLE_COLORS,
   CATEGORIES,
+  VERIFY_BUTTON_ID,
 } from '../utils/constants';
 import logger from '../utils/logger';
 
@@ -160,8 +167,57 @@ async function buildChannels(guild: Guild, roles: ServerRoles): Promise<void> {
     { id: everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [PermissionFlagsBits.SendMessages] },
   ]);
   await ensureChannel(guild, 'verify', ChannelType.GuildText, welcomeCat, [
-    { id: everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.UseApplicationCommands] },
+    {
+      id: everyone.id,
+      allow: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.UseApplicationCommands,
+      ],
+      deny: [
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.AddReactions,
+      ],
+    },
   ]);
+
+  // Post the persistent verify button message if one doesn't already exist
+  const verifyChannel = guild.channels.cache.find(
+    (c) => c.name === 'verify' && c.parentId === welcomeCat.id && c.isTextBased(),
+  ) as TextChannel | undefined;
+
+  if (verifyChannel) {
+    const messages = await verifyChannel.messages.fetch({ limit: 10 });
+    const hasVerifyButton = messages.some(
+      (m) =>
+        m.author.id === guild.client.user?.id &&
+        m.components.length > 0,
+    );
+
+    if (!hasVerifyButton) {
+      const embed = new EmbedBuilder()
+        .setTitle('CVMA Minnesota — Membership Verification')
+        .setDescription(
+          'Welcome to the CVMA Minnesota Discord server!\n\n' +
+          'To gain access to your chapter channels and state channels, ' +
+          'please verify your membership by clicking the button below.\n\n' +
+          'You will need the **email address** associated with your combatvet.us account.',
+        )
+        .setColor(0x2e8b57)
+        .setFooter({ text: 'If you have issues, contact the State Rep for assistance.' });
+
+      const button = new ButtonBuilder()
+        .setCustomId(VERIFY_BUTTON_ID)
+        .setLabel('Click to Verify')
+        .setStyle(ButtonStyle.Success);
+
+      const row = new ActionRowBuilder<MessageActionRowComponentBuilder>()
+        .addComponents(button);
+
+      await verifyChannel.send({ embeds: [embed], components: [row] });
+      logger.info('Posted verify button message in #verify');
+    }
+  }
 
   // ── STATE ANNOUNCEMENTS ─────────────────────────────────
   const annCat = await ensureCategory(guild, CATEGORIES.STATE_ANNOUNCEMENTS, [
