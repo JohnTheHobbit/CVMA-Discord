@@ -4,11 +4,24 @@ Discord bot for **Combat Veterans Motorcycle Association (CVMA) Minnesota** — 
 
 ## Features
 
-- **Member Verification** — Members join the server and run `/verify` with their CVMA email address. The bot looks them up in AirTable, assigns the appropriate roles, sets their server nickname, and announces them in `#introductions`.
-- **Automated Server Setup** — `/setup-server` creates all roles, categories, and channels with proper permission overwrites. Idempotent — safe to run multiple times.
+- **Member Verification with Email OTP** — Members click a "Click to Verify" button in `#verify`, enter their CVMA email, receive a 6-digit verification code via email, and enter it to complete verification. The bot assigns roles, sets their server nickname, and announces them in `#introductions`. The `/verify` slash command is also available as a fallback.
+- **Automated Server Setup** — `/setup-server` creates all roles, categories, and channels with proper permission overwrites. Also posts the verification button in `#verify`. Idempotent — safe to run multiple times.
 - **Role Sync** — Every 6 hours the bot syncs roles with AirTable. If a member's chapter, type, or officer status changes, their Discord roles update automatically. Inactive members have all managed roles removed. A summary is posted to `#seb-bot-log`.
-- **Announcements** — `/announce` lets CEB post to their chapter's announcements channel and SEB post to the state-level announcements channel.
+- **Announcements** — `/announce` lets CEB post to their chapter's announcements channel and SEB post to the state-level announcements channel. Supports an optional `scope` parameter (State/Chapter).
 - **Nickname Management** — On verification, members' server nicknames are set to `RoadName - Chapter` (e.g., `Hobbit - 48-4`) or `FirstName LastName - Chapter` if no road name. Officers get their title appended (e.g., `Hobbit - 48-4 - State Rep`).
+- **Inactive Member Handling** — Members marked as "Inactive" in AirTable are blocked from verifying and have all managed roles stripped during role sync, removing access to all channels except `#welcome` and `#verify`.
+
+## Verification Flow
+
+1. Member joins the server and sees only the `#welcome` and `#verify` channels
+2. In `#verify`, they click the **"Click to Verify"** button
+3. A modal opens asking for their CVMA email address
+4. The bot checks AirTable to confirm the member exists, is active, and isn't already linked to another Discord account
+5. A 6-digit verification code is emailed to the member (valid for 10 minutes)
+6. The member clicks **"Enter Code"** and enters the code in a second modal
+7. On success: roles are assigned, nickname is set, and a welcome embed is posted in `#introductions`
+
+Rate limiting: max 3 codes per email per hour, max 3 wrong attempts per code.
 
 ## Server Structure
 
@@ -28,7 +41,7 @@ Discord bot for **Combat Veterans Motorcycle Association (CVMA) Minnesota** — 
 
 ### Categories & Channels
 
-- **WELCOME** — `#welcome` (read-only info), `#verify` (slash commands only)
+- **WELCOME** — `#welcome` (read-only info), `#verify` (button-based verification, no typing allowed)
 - **STATE ANNOUNCEMENTS** — `#announcements`, `#upcoming-votes`, `#meeting-schedule` (SEB posts, verified members read)
 - **STATE GENERAL** — `#general-chat`, `#introductions`, `#photos-and-media`, voice hangout
 - **EVENTS & RIDES** — `#event-planning`, `#ride-planning`, `#event-calendar`, voice
@@ -43,6 +56,7 @@ Discord bot for **Combat Veterans Motorcycle Association (CVMA) Minnesota** — 
 - **Language**: TypeScript
 - **Discord Library**: discord.js v14
 - **Database**: AirTable (shared base with CVMA Login Automation)
+- **Email**: Nodemailer with Google Workspace SMTP (for OTP verification)
 - **Logging**: Winston with daily rotate file transport
 - **Scheduling**: node-cron
 - **Deployment**: Docker / Kubernetes
@@ -55,17 +69,19 @@ src/
 ├── config.ts                # Environment variable configuration
 ├── deploy-commands.ts       # Registers slash commands with Discord API
 ├── commands/
-│   ├── verify.ts            # /verify — member verification
+│   ├── verify.ts            # /verify — member verification + OTP helpers
 │   ├── setup-server.ts      # /setup-server — server structure setup
 │   └── announce.ts          # /announce — post announcements
 ├── services/
 │   ├── airtable.ts          # AirTable client — lookup, sync, link
+│   ├── email.ts             # Nodemailer SMTP — send verification codes
+│   ├── otp-store.ts         # In-memory OTP storage with rate limiting
 │   ├── server-builder.ts    # Roles, categories, channels, permissions
 │   └── role-sync.ts         # Scheduled role sync with AirTable
 ├── events/
 │   ├── ready.ts             # Bot startup + cron scheduling
 │   ├── guildMemberAdd.ts    # New member join logging
-│   └── interactionCreate.ts # Slash command routing
+│   └── interactionCreate.ts # Slash commands, buttons, and modal routing
 └── utils/
     ├── constants.ts         # Chapter numbers, role names, categories, AirTable fields
     └── logger.ts            # Winston logger configuration
@@ -76,6 +92,7 @@ src/
 - Node.js 20+
 - A Discord bot application with `bot` and `applications.commands` scopes, and `Administrator` permission
 - An AirTable base with a members table containing the fields: `MID`, `Email`, `First Name`, `Last Name`, `Road Name`, `Member Type`, `Chapter`, `Title`, `Member Status`, `Discord ID`, `Discord Verified Date`
+- A Google Workspace account with 2-Step Verification enabled and an App Password generated for SMTP
 
 ## Setup
 
@@ -95,16 +112,21 @@ Copy `.env.example` to `.env` and fill in the values:
 cp .env.example .env
 ```
 
-| Variable | Description |
-|----------|-------------|
-| `DISCORD_TOKEN` | Bot token from the Discord Developer Portal |
-| `DISCORD_CLIENT_ID` | Application ID from the Discord Developer Portal |
-| `DISCORD_GUILD_ID` | Your Discord server's ID |
-| `AIRTABLE_API_KEY` | AirTable Personal Access Token |
-| `AIRTABLE_BASE_ID` | AirTable base ID (starts with `app`) |
-| `AIRTABLE_TABLE_NAME` | AirTable table name (default: `Members`) |
-| `SYNC_CRON` | Role sync schedule as cron expression (default: `0 */6 * * *`) |
-| `LOG_LEVEL` | Logging level (default: `info`) |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DISCORD_TOKEN` | Yes | — | Bot token from the Discord Developer Portal |
+| `DISCORD_CLIENT_ID` | Yes | — | Application ID from the Discord Developer Portal |
+| `DISCORD_GUILD_ID` | Yes | — | Your Discord server's ID |
+| `AIRTABLE_API_KEY` | Yes | — | AirTable Personal Access Token |
+| `AIRTABLE_BASE_ID` | Yes | — | AirTable base ID (starts with `app`) |
+| `AIRTABLE_TABLE_NAME` | No | `Members` | AirTable table name |
+| `SMTP_USER` | Yes | — | Google Workspace email address |
+| `SMTP_PASS` | Yes | — | Google App Password (requires 2-Step Verification) |
+| `SMTP_HOST` | No | `smtp.gmail.com` | SMTP server hostname |
+| `SMTP_PORT` | No | `587` | SMTP port |
+| `SMTP_FROM` | No | `SMTP_USER` | From address for verification emails |
+| `SYNC_CRON` | No | `0 */6 * * *` | Role sync schedule (cron expression) |
+| `LOG_LEVEL` | No | `info` | Logging level |
 
 ### 3. Build and run
 
@@ -116,17 +138,18 @@ npm start
 
 ### 4. Initial server setup
 
-Run `/setup-server` in your Discord server (requires Administrator permission). This creates all roles, categories, and channels.
+Run `/setup-server` in your Discord server (requires Administrator permission). This creates all roles, categories, channels, and posts the verification button in `#verify`.
 
 ## Docker
 
-### Build
+### Build and push
 
 ```bash
-docker build -t cvma-discord-bot .
+docker build -t registry.boydclan.org/cvma-discord-bot:latest .
+docker push registry.boydclan.org/cvma-discord-bot:latest
 ```
 
-### Run
+### Run standalone
 
 ```bash
 docker run --env-file .env cvma-discord-bot
@@ -140,27 +163,40 @@ docker exec <container-id> node dist/deploy-commands.js
 
 ## Kubernetes
 
-K8s manifests are maintained in a separate repository. The deployment uses:
+K8s manifests are maintained in a separate repository and deployed via ArgoCD. The deployment uses:
 
 - A `cvma-discord` namespace
 - A Secret for environment variables
 - A single-replica Deployment with `Recreate` strategy
+- Image: `registry.boydclan.org/cvma-discord-bot:latest`
+
+To register slash commands in K8s:
+
+```bash
+kubectl exec -it -n cvma-discord $(kubectl get pod -n cvma-discord -o jsonpath='{.items[0].metadata.name}') -- node dist/deploy-commands.js
+```
+
+To restart the pod after a new image push (ArgoCD-compatible):
+
+```bash
+kubectl delete pod -l app=cvma-discord-bot -n cvma-discord
+```
 
 ## Slash Commands
 
 ### `/verify`
 
 **Usage**: `/verify email:<email>`
-Verifies a member's CVMA membership by looking up their email in AirTable. On success:
+Initiates the email OTP verification flow. The bot checks AirTable, sends a 6-digit code to the member's email, and replies with an "Enter Code" button. On successful code entry:
 - Assigns Verified, Chapter, Member Type, and officer roles
-- Sets server nickname
+- Sets server nickname (e.g., `Hobbit - 48-4 - State Rep`)
 - Links Discord ID in AirTable
 - Posts a welcome embed in `#introductions`
 
 ### `/setup-server`
 
 **Usage**: `/setup-server`
-Creates all roles, categories, and channels with proper permissions. Idempotent — skips anything that already exists. Requires Administrator permission.
+Creates all roles, categories, and channels with proper permissions. Posts the verification button in `#verify`. Idempotent — skips anything that already exists. Requires Administrator permission.
 
 ### `/announce`
 
@@ -172,10 +208,10 @@ Posts a formatted announcement embed. CEB members post to their chapter's `#anno
 | Field | Type | Purpose |
 |-------|------|---------|
 | MID | Text | Member ID |
-| Email | Email | Used for `/verify` lookup |
-| First Name | Text | Display name |
-| Last Name | Text | Display name |
-| Road Name | Text | Nickname / callsign |
+| Email | Email | Used for verification lookup (case-insensitive) |
+| First Name | Text | Display name / nickname fallback |
+| Last Name | Text | Display name / nickname fallback |
+| Road Name | Text | Nickname / callsign — used as primary display name |
 | Member Type | Text | `FM`, `AUX`, `SUP`, or `SAUX` |
 | Chapter | Text | Contains chapter number (e.g., `48-4`) |
 | Title | Text | Officer title — `State ...` = SEB, `Chapter ...` = CEB |

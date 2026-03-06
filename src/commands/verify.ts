@@ -5,14 +5,74 @@ import {
   GuildMember,
   TextChannel,
   EmbedBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ActionRowBuilder,
+  MessageActionRowComponentBuilder,
 } from 'discord.js';
 import { findMemberByEmail, linkDiscordId } from '../services/airtable';
+import { generateAndStore } from '../services/otp-store';
+import { sendVerificationCode } from '../services/email';
 import {
   CHAPTER_NUMBERS,
   ROLES,
   MEMBER_TYPE_MAP,
+  TITLE_ABBREVIATIONS,
+  OTP_ENTER_CODE_BUTTON_ID,
 } from '../utils/constants';
 import logger from '../utils/logger';
+
+// ─── Pre-verification check ────────────────────────────────────────────────
+
+export interface PreVerifyResult {
+  ok: true;
+  email: string;
+}
+export interface PreVerifyError {
+  ok: false;
+  message: string;
+}
+
+/**
+ * Check that a member exists in AirTable, is active, and isn't linked
+ * to a different Discord account. Run before sending an OTP.
+ */
+export async function preVerifyCheck(
+  email: string,
+  discordUserId: string,
+): Promise<PreVerifyResult | PreVerifyError> {
+  const record = await findMemberByEmail(email);
+
+  if (!record) {
+    return {
+      ok: false,
+      message:
+        'No membership record was found for that email address. ' +
+        'Please make sure you are using the email associated with your combatvet.us account. ' +
+        'If you continue to have issues, contact the State Rep for assistance.',
+    };
+  }
+
+  if (record.memberStatus.toLowerCase().trim() === 'inactive') {
+    return {
+      ok: false,
+      message:
+        'Your membership is currently inactive. ' +
+        'Please contact the State Rep if you believe this is an error.',
+    };
+  }
+
+  if (record.discordId && record.discordId !== discordUserId) {
+    return {
+      ok: false,
+      message:
+        'This membership is already linked to a different Discord account. ' +
+        'If this is an error, contact the State Rep.',
+    };
+  }
+
+  return { ok: true, email: record.email };
+}
 
 // ─── Shared verification logic ──────────────────────────────────────────────
 
@@ -22,8 +82,8 @@ export interface VerifyResult {
 }
 
 /**
- * Core verification logic — reused by both the /verify slash command
- * and the button+modal flow.
+ * Core verification logic — assigns roles, sets nickname, posts intro.
+ * Called after OTP validation succeeds.
  */
 export async function performVerification(
   email: string,
@@ -33,34 +93,11 @@ export async function performVerification(
   const record = await findMemberByEmail(email);
 
   if (!record) {
-    return {
-      success: false,
-      message:
-        'No membership record was found for that email address. ' +
-        'Please make sure you are using the email associated with your combatvet.us account. ' +
-        'If you continue to have issues, contact the State Rep for assistance.',
-    };
+    return { success: false, message: 'Membership record not found.' };
   }
 
-  // Check if member is active
-  if (record.memberStatus.toLowerCase().trim() === 'inactive') {
-    return {
-      success: false,
-      message:
-        'Your membership is currently inactive. ' +
-        'Please contact the State Rep if you believe this is an error.',
-    };
-  }
-
-  // Check if this AirTable record is already linked to a different Discord user
-  if (record.discordId && record.discordId !== member.id) {
-    return {
-      success: false,
-      message:
-        'This membership is already linked to a different Discord account. ' +
-        'If this is an error, contact the State Rep.',
-    };
-  }
+  // Check if this is a re-verification (member already has Verified role)
+  const isReVerify = member.roles.cache.some((r) => r.name === ROLES.VERIFIED);
 
   // Determine which roles to assign
   const rolesToAdd: string[] = [ROLES.VERIFIED];
@@ -108,10 +145,18 @@ export async function performVerification(
     : `${record.firstName} ${record.lastName}`;
 
   const namePart = record.roadName || `${record.firstName} ${record.lastName}`;
+  const titleAbbrev = title
+    ? TITLE_ABBREVIATIONS[title.toLowerCase()] || title
+    : '';
   const nickParts = [namePart];
   if (chapterNum) nickParts.push(chapterNum);
-  if (title) nickParts.push(title);
-  const nickname = nickParts.join(' - ');
+  if (titleAbbrev) nickParts.push(titleAbbrev);
+  let nickname = nickParts.join(' - ');
+
+  // Discord nicknames are limited to 32 characters
+  if (nickname.length > 32) {
+    nickname = nickname.substring(0, 32);
+  }
 
   try {
     await member.setNickname(nickname, 'CVMA verification');
@@ -125,10 +170,12 @@ export async function performVerification(
     `Verified ${member.user.tag} as ${displayName} (${chapterLabel}). Roles: ${assigned.join(', ')}`,
   );
 
-  // Announce in #introductions
-  const introChannel = guild.channels.cache.find(
-    (c) => c.name === 'introductions' && c.isTextBased(),
-  ) as TextChannel | undefined;
+  // Announce in #introductions (only on first verification)
+  const introChannel = !isReVerify
+    ? guild.channels.cache.find(
+        (c) => c.name === 'introductions' && c.isTextBased(),
+      ) as TextChannel | undefined
+    : undefined;
 
   if (introChannel) {
     const embed = new EmbedBuilder()
@@ -154,6 +201,18 @@ export async function performVerification(
   };
 }
 
+// ─── OTP helpers ────────────────────────────────────────────────────────────
+
+/** Build the "Enter Code" button row for OTP flow replies. */
+export function buildEnterCodeRow(): ActionRowBuilder<MessageActionRowComponentBuilder> {
+  const button = new ButtonBuilder()
+    .setCustomId(OTP_ENTER_CODE_BUTTON_ID)
+    .setLabel('Enter Code')
+    .setStyle(ButtonStyle.Success);
+
+  return new ActionRowBuilder<MessageActionRowComponentBuilder>().addComponents(button);
+}
+
 // ─── Slash command ──────────────────────────────────────────────────────────
 
 export const data = new SlashCommandBuilder()
@@ -177,11 +236,32 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     return;
   }
 
-  const member = interaction.member as GuildMember;
-
   try {
-    const result = await performVerification(email, member, guild);
-    await interaction.editReply(result.message);
+    // Pre-verify: check AirTable
+    const check = await preVerifyCheck(email, interaction.user.id);
+    if (!check.ok) {
+      await interaction.editReply(check.message);
+      return;
+    }
+
+    // Generate OTP and send email
+    const code = generateAndStore(interaction.user.id, guild.id, email);
+    if (!code) {
+      await interaction.editReply(
+        'Too many verification attempts. Please try again in an hour.',
+      );
+      return;
+    }
+
+    await sendVerificationCode(email, code);
+
+    await interaction.editReply({
+      content:
+        'A verification code has been sent to your email. ' +
+        'Click the button below to enter it.\n\n' +
+        '*The code expires in 10 minutes.*',
+      components: [buildEnterCodeRow()],
+    });
   } catch (err) {
     logger.error(`Verification failed for ${interaction.user.tag}: ${err}`);
     await interaction.editReply(

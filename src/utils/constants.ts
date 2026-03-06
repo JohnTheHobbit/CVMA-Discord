@@ -57,6 +57,29 @@ export const VERIFY_BUTTON_ID = 'cvma-verify-button';
 export const VERIFY_MODAL_ID = 'cvma-verify-modal';
 export const EMAIL_INPUT_ID = 'cvma-verify-email';
 
+/** OTP verification flow custom IDs */
+export const OTP_ENTER_CODE_BUTTON_ID = 'cvma-otp-enter-code';
+export const OTP_CODE_MODAL_ID = 'cvma-otp-code-modal';
+export const OTP_CODE_INPUT_ID = 'cvma-otp-code-input';
+
+/** Officer title abbreviations for Discord nicknames (case-insensitive match) */
+export const TITLE_ABBREVIATIONS: Record<string, string> = {
+  'chapter commander': 'CC',
+  'chapter executive officer': 'CXO',
+  'chapter secretary': 'CSEC',
+  'chapter treasurer': 'CTRES',
+  'chapter sergeant at arms': 'CSAA',
+  'chapter public relations officer': 'CPRO',
+  'state representative': 'SR',
+  'state sergeant at arms': 'SSAA',
+  'state secretary': 'SSEC',
+  'state treasurer': 'STRES',
+  'state public relations officer': 'SPRO',
+  'auxiliary state representative': 'ASR',
+  'state chaplain': 'SCHAP',
+  'chapter chaplain': 'CCHAP',
+};
+
 /** AirTable field names */
 export const AIRTABLE_FIELDS = {
   MID: 'MID',
