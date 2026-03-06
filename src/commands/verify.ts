@@ -17,6 +17,7 @@ import {
   CHAPTER_NUMBERS,
   ROLES,
   MEMBER_TYPE_MAP,
+  TITLE_ABBREVIATIONS,
   OTP_ENTER_CODE_BUTTON_ID,
 } from '../utils/constants';
 import logger from '../utils/logger';
@@ -95,6 +96,9 @@ export async function performVerification(
     return { success: false, message: 'Membership record not found.' };
   }
 
+  // Check if this is a re-verification (member already has Verified role)
+  const isReVerify = member.roles.cache.some((r) => r.name === ROLES.VERIFIED);
+
   // Determine which roles to assign
   const rolesToAdd: string[] = [ROLES.VERIFIED];
 
@@ -141,10 +145,18 @@ export async function performVerification(
     : `${record.firstName} ${record.lastName}`;
 
   const namePart = record.roadName || `${record.firstName} ${record.lastName}`;
+  const titleAbbrev = title
+    ? TITLE_ABBREVIATIONS[title.toLowerCase()] || title
+    : '';
   const nickParts = [namePart];
   if (chapterNum) nickParts.push(chapterNum);
-  if (title) nickParts.push(title);
-  const nickname = nickParts.join(' - ');
+  if (titleAbbrev) nickParts.push(titleAbbrev);
+  let nickname = nickParts.join(' - ');
+
+  // Discord nicknames are limited to 32 characters
+  if (nickname.length > 32) {
+    nickname = nickname.substring(0, 32);
+  }
 
   try {
     await member.setNickname(nickname, 'CVMA verification');
@@ -158,10 +170,12 @@ export async function performVerification(
     `Verified ${member.user.tag} as ${displayName} (${chapterLabel}). Roles: ${assigned.join(', ')}`,
   );
 
-  // Announce in #introductions
-  const introChannel = guild.channels.cache.find(
-    (c) => c.name === 'introductions' && c.isTextBased(),
-  ) as TextChannel | undefined;
+  // Announce in #introductions (only on first verification)
+  const introChannel = !isReVerify
+    ? guild.channels.cache.find(
+        (c) => c.name === 'introductions' && c.isTextBased(),
+      ) as TextChannel | undefined
+    : undefined;
 
   if (introChannel) {
     const embed = new EmbedBuilder()
