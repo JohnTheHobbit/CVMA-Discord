@@ -4,6 +4,8 @@ import {
   CHAPTER_NUMBERS,
   ROLES,
   MEMBER_TYPE_MAP,
+  TITLE_TO_OFFICER_ROLE,
+  OFFICER_ROLE_NAMES,
   ChapterNumber,
 } from '../utils/constants';
 import logger from '../utils/logger';
@@ -56,6 +58,12 @@ function expectedRoles(member: MemberRecord): string[] {
     roles.push(ROLES.ceb(ch));
   }
 
+  // Officer role from Title
+  const officerRole = TITLE_TO_OFFICER_ROLE[title.toLowerCase()];
+  if (officerRole) {
+    roles.push(officerRole);
+  }
+
   return roles;
 }
 
@@ -75,6 +83,7 @@ export async function syncRoles(guild: Guild): Promise<RoleChange[]> {
     ROLES.SUPPORT_AUXILIARY,
     ...CHAPTER_NUMBERS.map(ROLES.chapter),
     ...CHAPTER_NUMBERS.map(ROLES.ceb),
+    ...OFFICER_ROLE_NAMES,
   ]);
 
   for (const member of members) {

@@ -189,7 +189,26 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     })
     .setTimestamp();
 
-  await targetChannel.send({ embeds: [embed] });
+  // Determine which role to ping based on the target channel's category
+  let pingContent = '';
+  const parentName = targetChannel.parent?.name || '';
+
+  if (parentName === CATEGORIES.STATE_ANNOUNCEMENTS) {
+    // State announcement — ping all verified members
+    const verifiedRole = interaction.guild.roles.cache.find((r) => r.name === ROLES.VERIFIED);
+    if (verifiedRole) pingContent = verifiedRole.toString();
+  } else {
+    // Chapter announcement — ping the chapter role
+    for (const ch of CHAPTER_NUMBERS) {
+      if (parentName.includes(ch)) {
+        const chRole = interaction.guild.roles.cache.find((r) => r.name === ROLES.chapter(ch));
+        if (chRole) pingContent = chRole.toString();
+        break;
+      }
+    }
+  }
+
+  await targetChannel.send({ content: pingContent || undefined, embeds: [embed] });
 
   await interaction.editReply(
     `Announcement posted to ${targetChannel.toString()}!`,

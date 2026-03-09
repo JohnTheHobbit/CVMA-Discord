@@ -15,6 +15,12 @@ export const ROLES = {
   AUXILIARY: 'Auxiliary',
   SUPPORT: 'Support',
   SUPPORT_AUXILIARY: 'Support Auxiliary',
+  OFFICER_COMMANDER: 'Commander',
+  OFFICER_SECRETARY: 'Secretary',
+  OFFICER_TREASURER: 'Treasurer',
+  OFFICER_SAA: 'Sergeant at Arms',
+  OFFICER_PRO: 'PRO',
+  OFFICER_CHAPLAIN: 'Chaplain',
   ceb: (ch: string) => `CEB ${ch}`,
   chapter: (ch: string) => `Ch ${ch}`,
 } as const;
@@ -30,6 +36,7 @@ export const ROLE_COLORS = {
   SUPPORT: 0x808080,
   SUPPORT_AUXILIARY: 0x808080,
   VERIFIED: 0x808080,
+  OFFICER: 0x9b59b6,     // Purple
 } as const;
 
 /** Category names */
@@ -41,6 +48,7 @@ export const CATEGORIES = {
   SEB: '🔒 SEB',
   STATE_AUX: '🔸 STATE AUX',
   STATE_FM: '🔹 STATE FM/SUP',
+  OFFICER_CHANNELS: '🎖️ OFFICER CHANNELS',
   chapter: (ch: string) => `🟢 CHAPTER ${ch}`,
 } as const;
 
@@ -79,6 +87,33 @@ export const TITLE_ABBREVIATIONS: Record<string, string> = {
   'state chaplain': 'SCHAP',
   'chapter chaplain': 'CCHAP',
 };
+
+/** Map from AirTable title (lowercased) to officer role name */
+export const TITLE_TO_OFFICER_ROLE: Record<string, string> = {
+  'chapter commander': ROLES.OFFICER_COMMANDER,
+  'chapter executive officer': ROLES.OFFICER_COMMANDER,
+  'state representative': ROLES.OFFICER_COMMANDER,
+  'chapter secretary': ROLES.OFFICER_SECRETARY,
+  'state secretary': ROLES.OFFICER_SECRETARY,
+  'chapter treasurer': ROLES.OFFICER_TREASURER,
+  'state treasurer': ROLES.OFFICER_TREASURER,
+  'chapter sergeant at arms': ROLES.OFFICER_SAA,
+  'state sergeant at arms': ROLES.OFFICER_SAA,
+  'chapter public relations officer': ROLES.OFFICER_PRO,
+  'state public relations officer': ROLES.OFFICER_PRO,
+  'chapter chaplain': ROLES.OFFICER_CHAPLAIN,
+  'state chaplain': ROLES.OFFICER_CHAPLAIN,
+};
+
+/** All officer role names (for managed role set in sync) */
+export const OFFICER_ROLE_NAMES = [
+  ROLES.OFFICER_COMMANDER,
+  ROLES.OFFICER_SECRETARY,
+  ROLES.OFFICER_TREASURER,
+  ROLES.OFFICER_SAA,
+  ROLES.OFFICER_PRO,
+  ROLES.OFFICER_CHAPLAIN,
+] as const;
 
 /** AirTable field names */
 export const AIRTABLE_FIELDS = {

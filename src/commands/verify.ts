@@ -18,6 +18,7 @@ import {
   ROLES,
   MEMBER_TYPE_MAP,
   TITLE_ABBREVIATIONS,
+  TITLE_TO_OFFICER_ROLE,
   OTP_ENTER_CODE_BUTTON_ID,
 } from '../utils/constants';
 import logger from '../utils/logger';
@@ -122,6 +123,12 @@ export async function performVerification(
     rolesToAdd.push(ROLES.SEB);
   } else if (title.toLowerCase().startsWith('chapter') && chapterNum) {
     rolesToAdd.push(ROLES.ceb(chapterNum));
+  }
+
+  // Officer role from Title
+  const officerRole = TITLE_TO_OFFICER_ROLE[title.toLowerCase()];
+  if (officerRole) {
+    rolesToAdd.push(officerRole);
   }
 
   // Assign roles

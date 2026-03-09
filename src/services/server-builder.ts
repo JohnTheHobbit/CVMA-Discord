@@ -18,6 +18,7 @@ import {
   ROLE_COLORS,
   CATEGORIES,
   VERIFY_BUTTON_ID,
+  OFFICER_ROLE_NAMES,
 } from '../utils/constants';
 import logger from '../utils/logger';
 
@@ -107,6 +108,12 @@ interface ServerRoles {
   auxiliary: Role;
   support: Role;
   supportAux: Role;
+  officerCommander: Role;
+  officerSecretary: Role;
+  officerTreasurer: Role;
+  officerSAA: Role;
+  officerPRO: Role;
+  officerChaplain: Role;
 }
 
 /** Create all roles needed for the CVMA server. */
@@ -136,6 +143,14 @@ async function buildRoles(guild: Guild): Promise<ServerRoles> {
     true,
   );
 
+  // Officer roles (below SEB, above CEB)
+  const officerCommander = await ensureRole(guild, ROLES.OFFICER_COMMANDER, ROLE_COLORS.OFFICER, [], true);
+  const officerSecretary = await ensureRole(guild, ROLES.OFFICER_SECRETARY, ROLE_COLORS.OFFICER, [], true);
+  const officerTreasurer = await ensureRole(guild, ROLES.OFFICER_TREASURER, ROLE_COLORS.OFFICER, [], true);
+  const officerSAA = await ensureRole(guild, ROLES.OFFICER_SAA, ROLE_COLORS.OFFICER, [], true);
+  const officerPRO = await ensureRole(guild, ROLES.OFFICER_PRO, ROLE_COLORS.OFFICER, [], true);
+  const officerChaplain = await ensureRole(guild, ROLES.OFFICER_CHAPLAIN, ROLE_COLORS.OFFICER, [], true);
+
   const cebs = new Map<string, Role>();
   const chapters = new Map<string, Role>();
 
@@ -152,7 +167,12 @@ async function buildRoles(guild: Guild): Promise<ServerRoles> {
 
   const verified = await ensureRole(guild, ROLES.VERIFIED, ROLE_COLORS.VERIFIED);
 
-  return { stateRep, seb, verified, cebs, chapters, fullMember, auxiliary, support, supportAux };
+  return {
+    stateRep, seb, verified, cebs, chapters,
+    fullMember, auxiliary, support, supportAux,
+    officerCommander, officerSecretary, officerTreasurer,
+    officerSAA, officerPRO, officerChaplain,
+  };
 }
 
 /** Create all categories and channels. */
@@ -163,7 +183,7 @@ async function buildChannels(guild: Guild, roles: ServerRoles): Promise<void> {
   const welcomeCat = await ensureCategory(guild, CATEGORIES.WELCOME, [
     { id: everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory] },
   ]);
-  await ensureChannel(guild, 'welcome', ChannelType.GuildText, welcomeCat, [
+  await ensureChannel(guild, 'rules', ChannelType.GuildText, welcomeCat, [
     { id: everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [PermissionFlagsBits.SendMessages] },
   ]);
   await ensureChannel(guild, 'verify', ChannelType.GuildText, welcomeCat, [
@@ -258,6 +278,31 @@ async function buildChannels(guild: Guild, roles: ServerRoles): Promise<void> {
   await ensureChannel(guild, 'seb-drafts', ChannelType.GuildText, sebCat);
   await ensureChannel(guild, 'seb-bot-log', ChannelType.GuildText, sebCat);
   await ensureChannel(guild, 'seb-meeting', ChannelType.GuildVoice, sebCat);
+
+  // ── OFFICER CHANNELS ──────────────────────────────────────
+  const officerCat = await ensureCategory(guild, CATEGORIES.OFFICER_CHANNELS, [
+    { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+  ]);
+
+  const officerChannelDefs: { text: string; voice: string; role: Role }[] = [
+    { text: 'commanders', voice: 'commanders-voice', role: roles.officerCommander },
+    { text: 'secretaries', voice: 'secretaries-voice', role: roles.officerSecretary },
+    { text: 'treasurers', voice: 'treasurers-voice', role: roles.officerTreasurer },
+    { text: 'sergeants-at-arms', voice: 'sergeants-at-arms-voice', role: roles.officerSAA },
+    { text: 'pros', voice: 'pros-voice', role: roles.officerPRO },
+    { text: 'chaplains', voice: 'chaplains-voice', role: roles.officerChaplain },
+  ];
+
+  for (const def of officerChannelDefs) {
+    await ensureChannel(guild, def.text, ChannelType.GuildText, officerCat, [
+      { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: def.role.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+    ]);
+    await ensureChannel(guild, def.voice, ChannelType.GuildVoice, officerCat, [
+      { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: def.role.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak] },
+    ]);
+  }
 
   // ── CHAPTER CATEGORIES (one per chapter) ────────────────
   for (const ch of CHAPTER_NUMBERS) {
@@ -390,6 +435,12 @@ async function orderRoles(guild: Guild, roles: ServerRoles): Promise<void> {
 
   updates.push({ role: roles.stateRep.id, position: pos-- });
   updates.push({ role: roles.seb.id, position: pos-- });
+
+  // Officer roles between SEB and CEB
+  for (const name of OFFICER_ROLE_NAMES) {
+    const role = guild.roles.cache.find((r) => r.name === name);
+    if (role) updates.push({ role: role.id, position: pos-- });
+  }
 
   for (const ch of CHAPTER_NUMBERS) {
     updates.push({ role: roles.cebs.get(ch)!.id, position: pos-- });
