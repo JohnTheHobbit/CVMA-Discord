@@ -1,6 +1,7 @@
 import {
   Interaction,
   GuildMember,
+  ChatInputCommandInteraction,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -10,9 +11,25 @@ import {
 import * as verify from '../commands/verify';
 import * as setupServer from '../commands/setup-server';
 import * as announce from '../commands/announce';
+import * as event from '../commands/event';
+
+interface CommandModule {
+  execute(interaction: ChatInputCommandInteraction): Promise<void>;
+}
 import { preVerifyCheck, performVerification, buildEnterCodeRow } from '../commands/verify';
 import { generateAndStore, validate, remove } from '../services/otp-store';
 import { sendVerificationCode } from '../services/email';
+import {
+  getEvent,
+  getRsvps,
+  upsertRsvp,
+  addTimePollVote,
+  removeTimePollVote,
+  hasTimePollVote,
+  getTimePollResults,
+  getTimePollOptionById,
+} from '../services/database';
+import { buildEventEmbed, buildRsvpButtons, buildTimePollEmbed, buildTimePollButtons } from '../services/event-embeds';
 import {
   VERIFY_BUTTON_ID,
   VERIFY_MODAL_ID,
@@ -20,13 +37,18 @@ import {
   OTP_ENTER_CODE_BUTTON_ID,
   OTP_CODE_MODAL_ID,
   OTP_CODE_INPUT_ID,
+  EVT_RSVP_GOING_PREFIX,
+  EVT_RSVP_MAYBE_PREFIX,
+  EVT_RSVP_CANT_PREFIX,
+  EVT_POLL_PREFIX,
 } from '../utils/constants';
 import logger from '../utils/logger';
 
-const commands = new Map([
+const commands = new Map<string, CommandModule>([
   [verify.data.name, verify],
   [setupServer.data.name, setupServer],
   [announce.data.name, announce],
+  [event.data.name, event],
 ]);
 
 export async function onInteractionCreate(interaction: Interaction): Promise<void> {
@@ -203,5 +225,125 @@ export async function onInteractionCreate(interaction: Interaction): Promise<voi
       );
     }
     return;
+  }
+
+  // ── 6. Button: Event RSVP ──
+  if (interaction.isButton()) {
+    const customId = interaction.customId;
+    let rsvpStatus: string | null = null;
+    let eventId: string | null = null;
+
+    if (customId.startsWith(EVT_RSVP_GOING_PREFIX)) {
+      rsvpStatus = 'going';
+      eventId = customId.slice(EVT_RSVP_GOING_PREFIX.length);
+    } else if (customId.startsWith(EVT_RSVP_MAYBE_PREFIX)) {
+      rsvpStatus = 'maybe';
+      eventId = customId.slice(EVT_RSVP_MAYBE_PREFIX.length);
+    } else if (customId.startsWith(EVT_RSVP_CANT_PREFIX)) {
+      rsvpStatus = 'cant';
+      eventId = customId.slice(EVT_RSVP_CANT_PREFIX.length);
+    }
+
+    if (rsvpStatus && eventId) {
+      try {
+        const evt = getEvent(eventId);
+        if (!evt || evt.status === 'cancelled') {
+          await interaction.reply({ content: 'This event is no longer active.', ephemeral: true });
+          return;
+        }
+
+        const member = interaction.member as GuildMember;
+        const displayName = member.displayName || interaction.user.displayName;
+
+        upsertRsvp(eventId, interaction.user.id, rsvpStatus, displayName);
+
+        // Rebuild and edit the event embed in-place
+        const rsvps = getRsvps(eventId);
+        const embed = buildEventEmbed(evt, rsvps);
+        const buttons = buildRsvpButtons(eventId);
+        await interaction.message.edit({ embeds: [embed], components: [buttons] });
+
+        const statusLabels: Record<string, string> = {
+          going: "Going",
+          maybe: "Maybe",
+          cant: "Can't Make It",
+        };
+        await interaction.reply({
+          content: `You're marked as **${statusLabels[rsvpStatus]}** for **${evt.title}**.`,
+          ephemeral: true,
+        });
+      } catch (err) {
+        logger.error(`RSVP button error: ${err}`);
+        await interaction.reply({
+          content: 'An error occurred while updating your RSVP.',
+          ephemeral: true,
+        });
+      }
+      return;
+    }
+
+    // ── 7. Button: Time Poll Vote ──
+    if (customId.startsWith(EVT_POLL_PREFIX)) {
+      const pollOptionId = customId.slice(EVT_POLL_PREFIX.length);
+      try {
+        const pollOption = getTimePollOptionById(pollOptionId);
+        if (!pollOption) {
+          await interaction.reply({ content: 'Poll option not found.', ephemeral: true });
+          return;
+        }
+
+        const evt = getEvent(pollOption.event_id);
+        if (!evt) {
+          await interaction.reply({ content: 'Event not found.', ephemeral: true });
+          return;
+        }
+
+        // Toggle vote
+        const hadVote = hasTimePollVote(pollOptionId, interaction.user.id);
+        if (hadVote) {
+          removeTimePollVote(pollOptionId, interaction.user.id);
+        } else {
+          addTimePollVote(pollOptionId, interaction.user.id);
+        }
+
+        // Rebuild poll embed with voter names
+        const results = getTimePollResults(evt.id);
+        const guild = interaction.guild!;
+        const enrichedResults = await Promise.all(
+          results.map(async (r) => {
+            const voterNames = await Promise.all(
+              r.votes.map(async (userId) => {
+                try {
+                  const m = await guild.members.fetch(userId);
+                  return m.displayName;
+                } catch {
+                  return 'Unknown';
+                }
+              }),
+            );
+            return { ...r, voterNames };
+          }),
+        );
+
+        const pollEmbed = buildTimePollEmbed(evt, enrichedResults);
+        const pollOptions = results.map((r) => r.option);
+        const buttonRows = buildTimePollButtons(pollOptions);
+        await interaction.message.edit({ embeds: [pollEmbed], components: buttonRows });
+
+        await interaction.reply({
+          content: hadVote
+            ? `Vote removed for **${pollOption.label}**.`
+            : `Vote recorded for **${pollOption.label}**.`,
+          ephemeral: true,
+        });
+      } catch (err) {
+        logger.error(`Poll vote error: ${err}`);
+        await interaction.reply({
+          content: 'An error occurred while updating your vote.',
+          ephemeral: true,
+        });
+      }
+      return;
+    }
   }
 }

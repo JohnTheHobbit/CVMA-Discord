@@ -115,6 +115,15 @@ export const OFFICER_ROLE_NAMES = [
   ROLES.OFFICER_CHAPLAIN,
 ] as const;
 
+/** Event RSVP button custom ID prefixes */
+export const EVT_RSVP_GOING_PREFIX = 'evt-rsvp-going-';
+export const EVT_RSVP_MAYBE_PREFIX = 'evt-rsvp-maybe-';
+export const EVT_RSVP_CANT_PREFIX = 'evt-rsvp-cant-';
+export const EVT_POLL_PREFIX = 'evt-poll-';
+
+/** Event embed color */
+export const EVENT_EMBED_COLOR = 0x1abc9c; // Teal
+
 /** AirTable field names */
 export const AIRTABLE_FIELDS = {
   MID: 'MID',
