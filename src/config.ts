@@ -27,6 +27,14 @@ export const config = {
     pass: required('SMTP_PASS'),
     from: process.env.SMTP_FROM || process.env.SMTP_USER || '',
   },
+  db: {
+    path: process.env.DB_PATH || '/app/data/bot.db',
+  },
+  google: {
+    credentialsPath: process.env.GOOGLE_CREDENTIALS_PATH || '',
+    calendarId: process.env.GOOGLE_CALENDAR_ID || '',
+  },
   syncCron: process.env.SYNC_CRON || '0 */6 * * *',
+  reminderCron: process.env.REMINDER_CRON || '*/5 * * * *',
   logLevel: process.env.LOG_LEVEL || 'info',
 } as const;

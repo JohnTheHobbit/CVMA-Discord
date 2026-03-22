@@ -121,7 +121,7 @@ export async function performVerification(
   const title = (record.title || '').trim();
   if (title.toLowerCase().startsWith('state')) {
     rolesToAdd.push(ROLES.SEB);
-  } else if (title.toLowerCase().startsWith('chapter') && chapterNum) {
+  } else if (title.toLowerCase().startsWith('chapter') && !title.toLowerCase().includes('road captain') && chapterNum) {
     rolesToAdd.push(ROLES.ceb(chapterNum));
   }
 

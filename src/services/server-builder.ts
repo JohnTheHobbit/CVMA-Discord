@@ -397,6 +397,21 @@ async function buildChannels(guild: Guild, roles: ServerRoles): Promise<void> {
       { id: cebRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageMessages] },
       { id: roles.seb.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
     ]);
+
+    // Chapter events — open chapter events, visible to all verified members (bot posts, members read-only)
+    await ensureChannel(guild, 'chapter-events', ChannelType.GuildText, chCat, [
+      { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: roles.verified.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [PermissionFlagsBits.SendMessages] },
+      { id: roles.seb.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory] },
+    ]);
+
+    // Chapter private — chapter-only events, visible only to chapter members (bot posts, members read-only)
+    await ensureChannel(guild, 'chapter-private', ChannelType.GuildText, chCat, [
+      { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: chRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [PermissionFlagsBits.SendMessages] },
+      { id: cebRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory], deny: [PermissionFlagsBits.SendMessages] },
+      { id: roles.seb.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory] },
+    ]);
   }
 
   // ── STATE AUX ───────────────────────────────────────────

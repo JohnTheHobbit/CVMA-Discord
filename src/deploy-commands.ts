@@ -3,12 +3,14 @@ import { config } from './config';
 import * as verify from './commands/verify';
 import * as setupServer from './commands/setup-server';
 import * as announce from './commands/announce';
+import * as event from './commands/event';
 import logger from './utils/logger';
 
 const commands = [
   verify.data.toJSON(),
   setupServer.data.toJSON(),
   announce.data.toJSON(),
+  event.data.toJSON(),
 ];
 
 const rest = new REST().setToken(config.discord.token);
