@@ -3,6 +3,8 @@ import {
   SlashCommandBuilder,
   GuildMember,
   TextChannel,
+  CategoryChannel,
+  ChannelType,
   EmbedBuilder,
   GuildScheduledEventEntityType,
   GuildScheduledEventPrivacyLevel,
@@ -12,6 +14,7 @@ import {
   getEvent,
   cancelEvent,
   getUpcomingEvents,
+  findActiveEvent,
   getRsvps,
   updateEventMessageId,
   updateEventGcalId,
@@ -27,7 +30,13 @@ import {
   buildTimePollEmbed,
   buildTimePollButtons,
 } from '../services/event-embeds';
-import { CHAPTER_NUMBERS, ROLES, EVENT_EMBED_COLOR } from '../utils/constants';
+import {
+  CHAPTER_NUMBERS,
+  ROLES,
+  CATEGORIES,
+  CHANNEL_CHAPTER_PRIVATE,
+  EVENT_EMBED_COLOR,
+} from '../utils/constants';
 import logger from '../utils/logger';
 
 // ─── Slash command definition ───────────────────────────────────────────────
@@ -62,6 +71,9 @@ export const data = new SlashCommandBuilder()
           ),
       )
       .addStringOption((opt) =>
+        opt.setName('location').setDescription('Event location').setRequired(true),
+      )
+      .addStringOption((opt) =>
         opt.setName('description').setDescription('Event description').setRequired(false),
       )
       .addStringOption((opt) =>
@@ -70,8 +82,11 @@ export const data = new SlashCommandBuilder()
           .setDescription('End date/time (YYYY-MM-DD HH:MM, Central Time)')
           .setRequired(false),
       )
-      .addStringOption((opt) =>
-        opt.setName('location').setDescription('Event location').setRequired(false),
+      .addBooleanOption((opt) =>
+        opt
+          .setName('chapter-private')
+          .setDescription('Restrict this event to chapter members only (default: false = open to all)')
+          .setRequired(false),
       ),
   )
   .addSubcommand((sub) =>
@@ -141,26 +156,10 @@ export const data = new SlashCommandBuilder()
 // ─── Permission check ──────────────────────────────────────────────────────
 
 function checkEventPermission(
-  member: GuildMember,
-  scope: string,
+  _member: GuildMember,
+  _scope: string,
 ): { allowed: boolean; reason?: string } {
-  const isSEB = member.roles.cache.some((r) => r.name === ROLES.SEB);
-
-  if (scope === 'state') {
-    if (!isSEB) return { allowed: false, reason: 'Only SEB members can create state events.' };
-    return { allowed: true };
-  }
-
-  // Chapter scope
-  if (isSEB) return { allowed: true };
-
-  const isCEB = member.roles.cache.some((r) => r.name === ROLES.ceb(scope));
-  if (!isCEB) {
-    return {
-      allowed: false,
-      reason: `You must be a CEB member of Chapter ${scope} or SEB to create events for this chapter.`,
-    };
-  }
+  // All verified members may create events at any scope
   return { allowed: true };
 }
 
@@ -221,7 +220,9 @@ async function handleCreate(interaction: ChatInputCommandInteraction): Promise<v
   const scope = interaction.options.getString('scope', true);
   const description = interaction.options.getString('description') || '';
   const endDateStr = interaction.options.getString('end-date') || '';
-  const location = interaction.options.getString('location') || '';
+  const location = interaction.options.getString('location', true);
+  const chapterPrivate = scope !== 'state' && (interaction.options.getBoolean('chapter-private') ?? false);
+  const visibility = chapterPrivate ? 'chapter-only' : 'open';
 
   // Permission check
   const perm = checkEventPermission(member, scope);
@@ -259,17 +260,34 @@ async function handleCreate(interaction: ChatInputCommandInteraction): Promise<v
     eventDate,
     endDate,
     scope,
+    visibility,
     createdBy: interaction.user.id,
   });
 
-  // Find #event-calendar channel
-  const eventChannel = guild.channels.cache.find(
-    (c) => c.name === 'event-calendar' && c.isTextBased(),
-  ) as TextChannel | undefined;
+  // Resolve target channel based on scope and visibility:
+  // - State events and open chapter events → #event-calendar
+  // - Chapter-private events → chapter's #chapter-private channel
+  let eventChannel: TextChannel | undefined;
+  if (scope === 'state' || visibility === 'open') {
+    eventChannel = guild.channels.cache.find(
+      (c) => c.name === 'event-calendar' && c.isTextBased(),
+    ) as TextChannel | undefined;
+  } else {
+    const chCategoryName = CATEGORIES.chapter(scope);
+    const chCategory = guild.channels.cache.find(
+      (c) => c.type === ChannelType.GuildCategory && c.name === chCategoryName,
+    ) as CategoryChannel | undefined;
+
+    if (chCategory) {
+      eventChannel = guild.channels.cache.find(
+        (c) => c.name === CHANNEL_CHAPTER_PRIVATE && c.parentId === chCategory.id && c.isTextBased(),
+      ) as TextChannel | undefined;
+    }
+  }
 
   if (!eventChannel) {
     await interaction.editReply(
-      'Event created but could not find #event-calendar channel. Run `/setup-server` to create it.',
+      'Event created but could not find the target channel. Run `/setup-server` to create missing channels.',
     );
     return;
   }
@@ -303,8 +321,8 @@ async function handleCreate(interaction: ChatInputCommandInteraction): Promise<v
     updateEventGcalId(event.id, gcalId);
   }
 
-  // Create Discord Scheduled Event
-  try {
+  // Create Discord Scheduled Event (skip for chapter-only — scheduled events are server-wide visible)
+  if (visibility !== 'chapter-only') try {
     const scopeLabel = scope === 'state' ? 'CVMA MN State' : `CVMA MN Chapter ${scope}`;
     const scheduledStart = new Date(eventDate);
     const scheduledEnd = endDate ? new Date(endDate) : new Date(scheduledStart.getTime() + 60 * 60 * 1000);
@@ -341,12 +359,10 @@ async function handleCancel(interaction: ChatInputCommandInteraction): Promise<v
   const member = interaction.member as GuildMember;
   const inputId = interaction.options.getString('event-id', true).trim();
 
-  // Support both short (8-char) and full UUIDs
-  const allEvents = getUpcomingEvents();
-  const event = allEvents.find((e) => e.id === inputId || e.id.startsWith(inputId));
+  const event = findActiveEvent(inputId);
 
   if (!event) {
-    await interaction.editReply('Event not found. Make sure you entered the correct Event ID.');
+    await interaction.editReply('Event not found. Make sure you entered the correct Event ID from the embed footer.');
     return;
   }
 
@@ -406,10 +422,19 @@ async function handleCancel(interaction: ChatInputCommandInteraction): Promise<v
 }
 
 async function handleList(interaction: ChatInputCommandInteraction): Promise<void> {
+  const member = interaction.member as GuildMember;
+  const isSEB = member.roles.cache.some((r) => r.name === ROLES.SEB);
   const scopeFilter = interaction.options.getString('scope') || 'all';
-  const events = scopeFilter === 'all'
-    ? getUpcomingEvents()
-    : getUpcomingEvents(scopeFilter);
+
+  const allEvents = scopeFilter === 'all' ? getUpcomingEvents() : getUpcomingEvents(scopeFilter);
+
+  // Filter out chapter-only events the member doesn't have access to
+  const events = allEvents.filter((e) => {
+    if (e.scope === 'state') return true;
+    if (!e.visibility || e.visibility === 'open') return true;
+    if (isSEB) return true;
+    return member.roles.cache.some((r) => r.name === ROLES.chapter(e.scope));
+  });
 
   if (events.length === 0) {
     await interaction.editReply('No upcoming events found.');
@@ -447,11 +472,10 @@ async function handlePoll(interaction: ChatInputCommandInteraction): Promise<voi
   const member = interaction.member as GuildMember;
   const inputId = interaction.options.getString('event-id', true).trim();
 
-  const allEvents = getUpcomingEvents();
-  const evt = allEvents.find((e) => e.id === inputId || e.id.startsWith(inputId));
+  const evt = findActiveEvent(inputId);
 
   if (!evt) {
-    await interaction.editReply('Event not found.');
+    await interaction.editReply('Event not found. Make sure you entered the correct Event ID from the embed footer.');
     return;
   }
 
@@ -511,11 +535,10 @@ async function handlePickTime(interaction: ChatInputCommandInteraction): Promise
   const inputId = interaction.options.getString('event-id', true).trim();
   const optionNum = interaction.options.getInteger('option', true);
 
-  const allEvents = getUpcomingEvents();
-  const evt = allEvents.find((e) => e.id === inputId || e.id.startsWith(inputId));
+  const evt = findActiveEvent(inputId);
 
   if (!evt) {
-    await interaction.editReply('Event not found.');
+    await interaction.editReply('Event not found. Make sure you entered the correct Event ID from the embed footer.');
     return;
   }
 

@@ -54,7 +54,7 @@ function expectedRoles(member: MemberRecord): string[] {
   const title = (member.title || '').trim();
   if (title.toLowerCase().startsWith('state')) {
     roles.push(ROLES.SEB);
-  } else if (title.toLowerCase().startsWith('chapter') && ch) {
+  } else if (title.toLowerCase().startsWith('chapter') && !title.toLowerCase().includes('road captain') && ch) {
     roles.push(ROLES.ceb(ch));
   }
 

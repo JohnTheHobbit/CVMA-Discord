@@ -13,6 +13,7 @@ export interface EventRecord {
   event_date: string;
   end_date: string;
   scope: string;
+  visibility: string;
   created_by: string;
   created_at: string;
   channel_id: string;
@@ -62,6 +63,7 @@ export function initDatabase(): void {
       event_date TEXT NOT NULL,
       end_date TEXT NOT NULL DEFAULT '',
       scope TEXT NOT NULL,
+      visibility TEXT NOT NULL DEFAULT 'open',
       created_by TEXT NOT NULL,
       created_at TEXT NOT NULL,
       channel_id TEXT NOT NULL DEFAULT '',
@@ -103,6 +105,13 @@ export function initDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_poll_options_event ON time_poll_options(event_id);
   `);
 
+  // Migration: add visibility column to existing databases
+  try {
+    db.exec(`ALTER TABLE events ADD COLUMN visibility TEXT NOT NULL DEFAULT 'open'`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+
   logger.info(`Database initialized at ${config.db.path}`);
 }
 
@@ -115,15 +124,16 @@ export function createEvent(data: {
   eventDate: string;
   endDate: string;
   scope: string;
+  visibility: string;
   createdBy: string;
 }): EventRecord {
   const id = randomUUID();
   const now = new Date().toISOString();
 
   db.prepare(`
-    INSERT INTO events (id, title, description, location, event_date, end_date, scope, created_by, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, data.title, data.description, data.location, data.eventDate, data.endDate, data.scope, data.createdBy, now);
+    INSERT INTO events (id, title, description, location, event_date, end_date, scope, visibility, created_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, data.title, data.description, data.location, data.eventDate, data.endDate, data.scope, data.visibility, data.createdBy, now);
 
   return getEvent(id)!;
 }
@@ -150,6 +160,13 @@ export function updateEventDate(id: string, eventDate: string): void {
 
 export function cancelEvent(id: string): void {
   db.prepare("UPDATE events SET status = 'cancelled' WHERE id = ?").run(id);
+}
+
+export function findActiveEvent(idOrPrefix: string): EventRecord | undefined {
+  if (idOrPrefix.length === 36) {
+    return db.prepare("SELECT * FROM events WHERE id = ? AND status = 'active'").get(idOrPrefix) as EventRecord | undefined;
+  }
+  return db.prepare("SELECT * FROM events WHERE id LIKE ? AND status = 'active' LIMIT 1").get(idOrPrefix + '%') as EventRecord | undefined;
 }
 
 export function getUpcomingEvents(scope?: string): EventRecord[] {

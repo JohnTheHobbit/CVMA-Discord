@@ -86,6 +86,7 @@ export const TITLE_ABBREVIATIONS: Record<string, string> = {
   'auxiliary state representative': 'ASR',
   'state chaplain': 'SCHAP',
   'chapter chaplain': 'CCHAP',
+  'chapter road captain': 'RC',
 };
 
 /** Map from AirTable title (lowercased) to officer role name */
@@ -114,6 +115,10 @@ export const OFFICER_ROLE_NAMES = [
   ROLES.OFFICER_PRO,
   ROLES.OFFICER_CHAPLAIN,
 ] as const;
+
+/** Channel names for chapter-specific event channels */
+export const CHANNEL_CHAPTER_EVENTS = 'chapter-events';
+export const CHANNEL_CHAPTER_PRIVATE = 'chapter-private';
 
 /** Event RSVP button custom ID prefixes */
 export const EVT_RSVP_GOING_PREFIX = 'evt-rsvp-going-';
