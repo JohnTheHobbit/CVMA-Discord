@@ -45,6 +45,15 @@ export interface TimePollVote {
   user_id: string;
 }
 
+export interface UnverifiedMemberRecord {
+  discord_id: string;
+  joined_at: string;
+  welcome_sent: number;
+  reminder_1_sent: number;
+  reminder_2_sent: number;
+  kicked: number;
+}
+
 // ─── Database singleton ─────────────────────────────────────────────────────
 
 let db: Database.Database;
@@ -100,9 +109,19 @@ export function initDatabase(): void {
       FOREIGN KEY (poll_option_id) REFERENCES time_poll_options(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS unverified_members (
+      discord_id      TEXT PRIMARY KEY,
+      joined_at       TEXT NOT NULL,
+      welcome_sent    INTEGER NOT NULL DEFAULT 0,
+      reminder_1_sent INTEGER NOT NULL DEFAULT 0,
+      reminder_2_sent INTEGER NOT NULL DEFAULT 0,
+      kicked          INTEGER NOT NULL DEFAULT 0
+    );
+
     CREATE INDEX IF NOT EXISTS idx_events_status_date ON events(status, event_date);
     CREATE INDEX IF NOT EXISTS idx_rsvps_event ON rsvps(event_id);
     CREATE INDEX IF NOT EXISTS idx_poll_options_event ON time_poll_options(event_id);
+    CREATE INDEX IF NOT EXISTS idx_unverified_joined ON unverified_members(joined_at);
   `);
 
   // Migration: add visibility column to existing databases
@@ -259,4 +278,44 @@ export function getTimePollResults(eventId: string): { option: TimePollOption; v
     ).all(option.id) as { user_id: string }[];
     return { option, votes: votes.map((v) => v.user_id) };
   });
+}
+
+// ─── Unverified Members ──────────────────────────────────────────────────────
+
+export function upsertUnverifiedMember(discordId: string, joinedAt: string): void {
+  db.prepare(
+    'INSERT OR IGNORE INTO unverified_members (discord_id, joined_at) VALUES (?, ?)',
+  ).run(discordId, joinedAt);
+}
+
+export function removeUnverifiedMember(discordId: string): void {
+  db.prepare('DELETE FROM unverified_members WHERE discord_id = ?').run(discordId);
+}
+
+export function getUnverifiedMembersPendingReminder(
+  field: 'reminder_1_sent' | 'reminder_2_sent',
+  afterDays: number,
+): UnverifiedMemberRecord[] {
+  const cutoff = new Date(Date.now() - afterDays * 24 * 60 * 60 * 1000).toISOString();
+  return db.prepare(
+    `SELECT * FROM unverified_members WHERE ${field} = 0 AND kicked = 0 AND joined_at <= ?`,
+  ).all(cutoff) as UnverifiedMemberRecord[];
+}
+
+export function markVerifyReminderSent(
+  discordId: string,
+  field: 'welcome_sent' | 'reminder_1_sent' | 'reminder_2_sent',
+): void {
+  db.prepare(`UPDATE unverified_members SET ${field} = 1 WHERE discord_id = ?`).run(discordId);
+}
+
+export function getUnverifiedMembersPendingKick(afterDays: number): UnverifiedMemberRecord[] {
+  const cutoff = new Date(Date.now() - afterDays * 24 * 60 * 60 * 1000).toISOString();
+  return db.prepare(
+    'SELECT * FROM unverified_members WHERE kicked = 0 AND joined_at <= ?',
+  ).all(cutoff) as UnverifiedMemberRecord[];
+}
+
+export function markMemberKicked(discordId: string): void {
+  db.prepare('UPDATE unverified_members SET kicked = 1 WHERE discord_id = ?').run(discordId);
 }

@@ -36,5 +36,12 @@ export const config = {
   },
   syncCron: process.env.SYNC_CRON || '0 */6 * * *',
   reminderCron: process.env.REMINDER_CRON || '*/5 * * * *',
+  verifyReminders: {
+    welcomeDmEnabled: process.env.VERIFY_WELCOME_DM !== 'false',
+    firstReminderDays: parseInt(process.env.VERIFY_REMINDER_1_DAYS || '3', 10),
+    secondReminderDays: parseInt(process.env.VERIFY_REMINDER_2_DAYS || '7', 10),
+    kickAfterDays: parseInt(process.env.VERIFY_KICK_AFTER_DAYS || '14', 10),
+    checkCron: process.env.VERIFY_REMINDER_CRON || '0 9 * * *',
+  },
   logLevel: process.env.LOG_LEVEL || 'info',
 } as const;

@@ -28,6 +28,7 @@ import {
   hasTimePollVote,
   getTimePollResults,
   getTimePollOptionById,
+  removeUnverifiedMember,
 } from '../services/database';
 import { buildEventEmbed, buildRsvpButtons, buildTimePollEmbed, buildTimePollButtons } from '../services/event-embeds';
 import {
@@ -217,6 +218,9 @@ export async function onInteractionCreate(interaction: Interaction): Promise<voi
 
     try {
       const verifyResult = await performVerification(result.email, member, guild);
+      if (verifyResult.success) {
+        removeUnverifiedMember(member.id);
+      }
       await interaction.editReply(verifyResult.message);
     } catch (err) {
       logger.error(`OTP verification failed for ${interaction.user.tag}: ${err}`);
